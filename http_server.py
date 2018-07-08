@@ -1,6 +1,9 @@
 import socket
 import sys
 import os
+import pathlib
+import mimetypes
+
 
 def response_ok(body=b"This is a minimal response", mimetype=b"text/plain"):
     """
@@ -19,29 +22,34 @@ def response_ok(body=b"This is a minimal response", mimetype=b"text/plain"):
     """
 
     return b"\r\n".join([
-                b"HTTP/1.1 200 OK",
-                b"Content-Type: " + mimetype,
-                b"",
-                body,
-            ])
+        b"HTTP/1.1 200 OK",
+        b"Content-Type: " + mimetype,
+        b"",  # separating the head of the response from the body
+        body,
+    ])
+
 
 def parse_request(request):
-    
+
+    # plitting the request into lines, taking the first of those lines,
+    # and then splitting that first line on the space character to pull
+    # out the method path and HTTP version of the request
     method, uri, version = request.split("\r\n")[0].split(" ")
 
     if method != "GET":
         raise NotImplementedError
 
+    # make use of the uri inside the server method
     return uri
 
 
 def response_method_not_allowed():
     """Returns a 405 Method Not Allowed response"""
     return b"\r\n".join([
-                b"HTTP/1.1 405 Method Not Allowed",
-                b"",
-                b"You can't do that on this server!",
-            ])
+        b"HTTP/1.1 405 Method Not Allowed",
+        b"",
+        b"You can't do that on this server!",
+    ])
 
 
 def response_not_found():
@@ -51,8 +59,12 @@ def response_not_found():
     # You can re-use most of the code from the 405 Method Not
     # Allowed response.
 
-    pass
-    
+    return b"\r\n".join([
+        b"HTTP/1.1 404 Not Found",
+        b"",
+        b"Page is not on this server",
+    ])
+
 
 def resolve_uri(uri):
     """
@@ -68,7 +80,7 @@ def resolve_uri(uri):
     NameError that the server can catch to return a 404 response.
 
     Ex:
-        resolve_uri('/a_web_page.html') -> (b"<html><h1>North Carolina...",
+        resolve_uri('/  ') -> (b"<html><h1>North Carolina...",
                                             b"text/html")
 
         resolve_uri('/images/sample_1.png')
@@ -88,9 +100,24 @@ def resolve_uri(uri):
 
     # Hint: When opening a file, use open(filename, "rb") to open and read the
     # file as a stream of bytes.
+    web_root = 'webroot'
+    imgs = 'images'
+    web_path = os.path.join(web_root, *uri.split('/'))
+    # print(web_path)
 
-    content = b"not implemented"
-    mime_type = b"not implemented"
+    if uri == '/':
+        content = ','.join(os.listdir(os.path.join(web_root, ''))).encode()
+        mime_type = 'text/plain'.encode()
+    elif uri == '/images':
+        content = ','.join(os.listdir(os.path.join(web_root, imgs))).encode()
+        mime_type = 'text/plain'.encode()
+    # If use else the NameError is generated each time
+    elif not os.path.exists(web_path):
+        raise NameError
+    elif os.path.exists(web_path):
+        with open(web_path, 'rb') as obj:
+            content = obj.read()
+            mime_type = mimetypes.guess_type(web_path)[0].encode()
 
     return content, mime_type
 
@@ -114,7 +141,7 @@ def server(log_buffer=sys.stderr):
                     data = conn.recv(1024)
                     request += data.decode('utf8')
 
-                    #if len(data) < 1024:
+                    # if len(data) < 1024:
                     #    break
                     if b'\r\n\r\n' in data:
                         break
@@ -128,8 +155,12 @@ def server(log_buffer=sys.stderr):
                     # specified by uri can't be found. If it does raise a
                     # NameError, then let response get response_not_found()
                     # instead of response_ok()
-                    body, mimetype = resolve_uri(uri)
-                    response = response_ok(body=body, mimetype=mimetype)
+                    try:
+                        body, mimetype = resolve_uri(uri)
+                    except NameError:
+                        response = response_not_found()
+                    else:
+                        response = response_ok(body=body, mimetype=mimetype)
 
                 conn.sendall(response)
             finally:
@@ -143,5 +174,3 @@ def server(log_buffer=sys.stderr):
 if __name__ == '__main__':
     server()
     sys.exit(0)
-
-
